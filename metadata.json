@@ -1,0 +1,7 @@
+{
+  "name": "ShortVibe - Text-to-Short Video Generator",
+  "description": "Transform your scripts and blog posts into polished short-form videos for TikTok, Reels, and Shorts using AI.",
+  "requestFramePermissions": [
+    "microphone"
+  ]
+}
