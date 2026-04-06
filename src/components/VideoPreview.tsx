@@ -26,7 +26,9 @@ export const VideoPreview: React.FC<VideoPreviewProps> = ({ project }) => {
   const [isPlaying, setIsPlaying] = useState(false);
   const [progress, setProgress] = useState(0);
   const audioRef = useRef<HTMLAudioElement | null>(null);
+  const bgMusicRef = useRef<HTMLAudioElement | null>(null);
   const timerRef = useRef<number | null>(null);
+  const videoRef = useRef<HTMLVideoElement | null>(null);
 
   const currentScene = project.scenes[currentSceneIndex];
 
@@ -40,21 +42,22 @@ export const VideoPreview: React.FC<VideoPreviewProps> = ({ project }) => {
   }, [isPlaying, currentSceneIndex]);
 
   const startPlayback = () => {
+    // Background Music
+    if (project.backgroundMusicUrl && !bgMusicRef.current) {
+      const bgMusic = new Audio(project.backgroundMusicUrl);
+      bgMusic.loop = true;
+      bgMusic.volume = 0.3;
+      bgMusicRef.current = bgMusic;
+      bgMusic.play().catch(console.error);
+    } else if (bgMusicRef.current) {
+      bgMusicRef.current.play().catch(console.error);
+    }
+
+    // Scene Voiceover
     if (currentScene?.audioUrl) {
       const audio = new Audio(currentScene.audioUrl);
       audioRef.current = audio;
-      
-      audio.onerror = (e) => {
-        console.error("Audio failed to load:", e);
-        // Fallback to timer-based progression if audio fails
-      };
-
-      audio.play().catch(e => {
-        console.error("Audio play failed:", e);
-        // This can happen if the user hasn't interacted with the page yet
-        setIsPlaying(false);
-      });
-
+      audio.play().catch(console.error);
       audio.onended = () => {
         if (currentSceneIndex < project.scenes.length - 1) {
           setCurrentSceneIndex(prev => prev + 1);
@@ -65,6 +68,12 @@ export const VideoPreview: React.FC<VideoPreviewProps> = ({ project }) => {
           setProgress(0);
         }
       };
+    }
+
+    // Scene Video
+    if (videoRef.current) {
+      videoRef.current.currentTime = 0;
+      videoRef.current.play().catch(console.error);
     }
 
     const startTime = Date.now();
@@ -92,6 +101,12 @@ export const VideoPreview: React.FC<VideoPreviewProps> = ({ project }) => {
     if (audioRef.current) {
       audioRef.current.pause();
       audioRef.current = null;
+    }
+    if (bgMusicRef.current) {
+      bgMusicRef.current.pause();
+    }
+    if (videoRef.current) {
+      videoRef.current.pause();
     }
     if (timerRef.current) {
       clearInterval(timerRef.current);
@@ -155,19 +170,55 @@ export const VideoPreview: React.FC<VideoPreviewProps> = ({ project }) => {
 
     recorder.start();
 
+    // Load Background Music
+    let bgMusicSource: AudioBufferSourceNode | null = null;
+    if (project.backgroundMusicUrl) {
+      const bgMusicData = await fetch(project.backgroundMusicUrl).then(r => r.arrayBuffer());
+      const bgMusicBuffer = await audioContext.decodeAudioData(bgMusicData);
+      bgMusicSource = audioContext.createBufferSource();
+      bgMusicSource.buffer = bgMusicBuffer;
+      bgMusicSource.loop = true;
+      const bgGain = audioContext.createGain();
+      bgGain.gain.value = 0.3;
+      bgMusicSource.connect(bgGain);
+      bgGain.connect(audioDestination);
+      bgMusicSource.start();
+    }
+
+    // Load Logo if exists
+    let logoImg: HTMLImageElement | null = null;
+    if (project.brandKit?.logo) {
+      logoImg = new Image();
+      logoImg.crossOrigin = "anonymous";
+      logoImg.src = project.brandKit.logo;
+      await new Promise((resolve) => { logoImg!.onload = resolve; });
+    }
+
     // Play through each scene and draw to canvas
     for (let i = 0; i < project.scenes.length; i++) {
       const scene = project.scenes[i];
       setCurrentSceneIndex(i);
       setExportProgress(((i + 1) / project.scenes.length) * 100);
 
-      // Load image
-      const img = new Image();
-      img.crossOrigin = "anonymous";
-      img.src = scene.imageUrl || "";
-      await new Promise((resolve) => { img.onload = resolve; });
+      // Load video or image
+      let video: HTMLVideoElement | null = null;
+      let img: HTMLImageElement | null = null;
 
-      // Load and play audio
+      if (scene.videoUrl) {
+        video = document.createElement('video');
+        video.src = scene.videoUrl;
+        video.crossOrigin = "anonymous";
+        video.muted = true;
+        await new Promise((resolve) => { video!.onloadeddata = resolve; });
+        video.play();
+      } else {
+        img = new Image();
+        img.crossOrigin = "anonymous";
+        img.src = scene.imageUrl || "";
+        await new Promise((resolve) => { img!.onload = resolve; });
+      }
+
+      // Load and play voiceover
       let audioSource: AudioBufferSourceNode | null = null;
       if (scene.audioUrl) {
         const audioData = await fetch(scene.audioUrl).then(r => r.arrayBuffer());
@@ -175,7 +226,6 @@ export const VideoPreview: React.FC<VideoPreviewProps> = ({ project }) => {
         audioSource = audioContext.createBufferSource();
         audioSource.buffer = audioBuffer;
         audioSource.connect(audioDestination);
-        audioSource.connect(audioContext.destination);
         audioSource.start();
       }
 
@@ -190,33 +240,46 @@ export const VideoPreview: React.FC<VideoPreviewProps> = ({ project }) => {
         ctx.fillStyle = 'black';
         ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-        // Draw image with Ken Burns
-        const scale = 1 + (sceneProgress * 0.2);
-        const x = -(canvas.width * (scale - 1)) / 2;
-        const y = -(canvas.height * (scale - 1)) / 2;
-        ctx.drawImage(img, x, y, canvas.width * scale, canvas.height * scale);
+        if (video) {
+          ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+        } else if (img) {
+          // Draw image with Ken Burns
+          const scale = 1 + (sceneProgress * 0.2);
+          const x = -(canvas.width * (scale - 1)) / 2;
+          const y = -(canvas.height * (scale - 1)) / 2;
+          ctx.drawImage(img, x, y, canvas.width * scale, canvas.height * scale);
+        }
+
+        // Draw Logo Overlay
+        if (logoImg) {
+          const logoSize = canvas.width * 0.1; // 10% of width
+          const padding = 40;
+          ctx.globalAlpha = 0.9;
+          ctx.drawImage(logoImg, canvas.width - logoSize - padding, padding, logoSize, logoSize);
+          ctx.globalAlpha = 1.0;
+        }
 
         // Draw overlay text
         ctx.fillStyle = 'rgba(0, 0, 0, 0.4)';
-        ctx.fillRect(0, canvas.height - 150, canvas.width, 150);
+        ctx.fillRect(0, canvas.height - 200, canvas.width, 200);
         
         ctx.fillStyle = project.brandKit?.primaryColor || 'white';
-        ctx.font = 'bold 48px Outfit';
+        ctx.font = 'bold 54px Outfit';
         ctx.textAlign = 'center';
         ctx.shadowColor = 'black';
-        ctx.shadowBlur = 10;
+        ctx.shadowBlur = 15;
         
         // Wrap text
         const words = scene.text.split(' ');
         let line = '';
-        let yPos = canvas.height - 100;
+        let yPos = canvas.height - 120;
         for (let n = 0; n < words.length; n++) {
           const testLine = line + words[n] + ' ';
           const metrics = ctx.measureText(testLine);
-          if (metrics.width > canvas.width - 100 && n > 0) {
+          if (metrics.width > canvas.width - 120 && n > 0) {
             ctx.fillText(line, canvas.width / 2, yPos);
             line = words[n] + ' ';
-            yPos += 60;
+            yPos += 70;
           } else {
             line = testLine;
           }
@@ -227,33 +290,43 @@ export const VideoPreview: React.FC<VideoPreviewProps> = ({ project }) => {
       }
       
       if (audioSource) audioSource.stop();
+      if (video) video.pause();
     }
 
+    if (bgMusicSource) bgMusicSource.stop();
     recorder.stop();
     await audioContext.close();
   };
 
   return (
-    <div className="flex flex-col gap-6">
+    <div className="flex flex-col gap-8">
       {/* Hidden Canvas for Export */}
       <canvas 
         ref={canvasRef} 
-        width={project.aspectRatio === '16:9' ? 1920 : project.aspectRatio === '1:1' ? 1080 : 1080}
-        height={project.aspectRatio === '16:9' ? 1080 : project.aspectRatio === '1:1' ? 1080 : 1920}
+        width={project.aspectRatio === '16:9' ? 1280 : project.aspectRatio === '1:1' ? 1080 : 720}
+        height={project.aspectRatio === '16:9' ? 720 : project.aspectRatio === '1:1' ? 1080 : 1280}
         className="hidden"
       />
 
-      <div className={`relative aspect-[${project.aspectRatio === '9:16' ? '9/16' : project.aspectRatio === '1:1' ? '1/1' : '16/9'}] bg-black rounded-2xl overflow-hidden shadow-2xl group`}>
+      <div className={`relative aspect-[${project.aspectRatio === '9:16' ? '9/16' : project.aspectRatio === '1:1' ? '1/1' : '16/9'}] bg-black rounded-3xl overflow-hidden shadow-2xl border border-white/10`}>
         <AnimatePresence mode="wait">
           <motion.div
             key={currentSceneIndex}
-            initial={{ opacity: 0, scale: 1.1 }}
-            animate={{ opacity: 1, scale: 1 }}
-            exit={{ opacity: 0, scale: 0.95 }}
-            transition={{ duration: 0.8 }}
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.5 }}
             className="absolute inset-0"
           >
-            {currentScene?.imageUrl ? (
+            {currentScene?.videoUrl ? (
+              <video 
+                ref={videoRef}
+                src={currentScene.videoUrl} 
+                className="w-full h-full object-cover"
+                muted
+                playsInline
+              />
+            ) : currentScene?.imageUrl ? (
               <img 
                 src={currentScene.imageUrl} 
                 alt={currentScene.text}
@@ -261,17 +334,17 @@ export const VideoPreview: React.FC<VideoPreviewProps> = ({ project }) => {
                 referrerPolicy="no-referrer"
               />
             ) : (
-              <div className="w-full h-full flex items-center justify-center bg-slate-800">
-                <div className="animate-pulse text-slate-500">Generating Visual...</div>
+              <div className="w-full h-full flex items-center justify-center bg-slate-900">
+                <div className="animate-pulse text-slate-600 font-bold">Rendering Scene...</div>
               </div>
             )}
             
             {/* Overlay Captions */}
-            <div className="absolute inset-x-0 bottom-12 px-8 text-center">
+            <div className="absolute inset-x-0 bottom-16 px-10 text-center">
               <motion.p
                 initial={{ y: 20, opacity: 0 }}
                 animate={{ y: 0, opacity: 1 }}
-                className="text-white text-2xl font-bold drop-shadow-lg leading-tight"
+                className="text-white text-3xl font-bold drop-shadow-2xl leading-tight bg-black/30 backdrop-blur-sm py-4 px-6 rounded-2xl inline-block"
                 style={{ color: project.brandKit?.primaryColor || '#ffffff' }}
               >
                 {currentScene?.text}
@@ -280,7 +353,7 @@ export const VideoPreview: React.FC<VideoPreviewProps> = ({ project }) => {
 
             {/* Logo Overlay */}
             {project.brandKit?.logo && (
-              <div className="absolute top-6 right-6 w-16 h-16 opacity-80">
+              <div className="absolute top-8 right-8 w-20 h-20 opacity-90 drop-shadow-lg">
                 <img src={project.brandKit.logo} alt="Logo" className="w-full h-full object-contain" />
               </div>
             )}
@@ -288,57 +361,57 @@ export const VideoPreview: React.FC<VideoPreviewProps> = ({ project }) => {
         </AnimatePresence>
 
         {/* Progress Bar */}
-        <div className="absolute bottom-0 left-0 right-0 h-1.5 bg-white/20">
+        <div className="absolute bottom-0 left-0 right-0 h-2 bg-white/10">
           <motion.div 
-            className="h-full bg-brand-500"
+            className="h-full bg-brand-500 shadow-[0_0_15px_rgba(12,145,235,0.5)]"
             style={{ width: `${progress}%` }}
           />
         </div>
       </div>
 
       {/* Controls */}
-      <div className="glass-panel p-4 rounded-xl flex items-center justify-between">
-        <div className="flex items-center gap-4">
-          <button onClick={handlePrev} className="p-2 hover:bg-slate-100 rounded-full transition-colors">
-            <SkipBack size={20} />
+      <div className="glass-panel p-6 rounded-2xl flex items-center justify-between">
+        <div className="flex items-center gap-6">
+          <button onClick={handlePrev} className="p-3 text-slate-400 hover:text-white hover:bg-white/5 rounded-full transition-all">
+            <SkipBack size={24} />
           </button>
           <button 
             onClick={handleTogglePlay}
-            className="w-12 h-12 bg-brand-600 text-white rounded-full flex items-center justify-center hover:bg-brand-700 transition-all shadow-lg hover:scale-105 active:scale-95"
+            className="w-16 h-16 bg-white text-slate-950 rounded-full flex items-center justify-center hover:scale-105 active:scale-95 transition-all shadow-xl shadow-white/10"
           >
-            {isPlaying ? <Pause size={24} fill="currentColor" /> : <Play size={24} className="ml-1" fill="currentColor" />}
+            {isPlaying ? <Pause size={32} fill="currentColor" /> : <Play size={32} className="ml-1" fill="currentColor" />}
           </button>
-          <button onClick={handleNext} className="p-2 hover:bg-slate-100 rounded-full transition-colors">
-            <SkipForward size={20} />
+          <button onClick={handleNext} className="p-3 text-slate-400 hover:text-white hover:bg-white/5 rounded-full transition-all">
+            <SkipForward size={24} />
           </button>
         </div>
 
-        <div className="flex items-center gap-2 text-sm font-medium text-slate-500">
-          <span>Scene {currentSceneIndex + 1}</span>
-          <span>/</span>
+        <div className="flex items-center gap-3 text-sm font-bold text-slate-400">
+          <span className="text-white">Scene {currentSceneIndex + 1}</span>
+          <span className="opacity-30">/</span>
           <span>{project.scenes.length}</span>
         </div>
 
-        <div className="flex items-center gap-4">
-          <div className="flex items-center gap-2 text-slate-400">
-            <Volume2 size={18} />
-            <div className="w-20 h-1 bg-slate-200 rounded-full overflow-hidden">
-              <div className="w-3/4 h-full bg-brand-400" />
+        <div className="flex items-center gap-6">
+          <div className="flex items-center gap-3 text-slate-500">
+            <Volume2 size={20} />
+            <div className="w-24 h-1.5 bg-white/10 rounded-full overflow-hidden">
+              <div className="w-3/4 h-full bg-brand-500" />
             </div>
           </div>
           <button 
             onClick={handleExport}
             disabled={isExporting}
-            className="flex items-center gap-2 px-4 py-2 bg-slate-900 text-white rounded-lg hover:bg-slate-800 transition-colors text-sm font-semibold disabled:opacity-50 disabled:cursor-not-allowed min-w-[120px] justify-center"
+            className="flex items-center gap-3 px-6 py-3 bg-brand-600 text-white rounded-xl hover:bg-brand-700 transition-all text-sm font-bold disabled:opacity-50 disabled:cursor-not-allowed min-w-[140px] justify-center shadow-lg shadow-brand-500/20"
           >
             {isExporting ? (
               <>
-                <RefreshCw size={16} className="animate-spin" />
+                <RefreshCw size={18} className="animate-spin" />
                 {Math.round(exportProgress)}%
               </>
             ) : (
               <>
-                <Download size={16} />
+                <Download size={18} />
                 Export MP4
               </>
             )}

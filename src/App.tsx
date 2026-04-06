@@ -23,6 +23,8 @@ import {
   segmentTextIntoScenes, 
   generateSceneImage, 
   generateSceneAudio, 
+  generateSceneVideo,
+  generateBackgroundMusic,
   Scene, 
   VideoProject 
 } from './services/aiService';
@@ -74,18 +76,28 @@ export default function App() {
     const updatedScenes = [...project.scenes];
     let hasError = false;
     
+    try {
+      setLoadingStatus('Generating background music...');
+      const musicUrl = await generateBackgroundMusic(`A ${style} background track for a video about: ${project.title}`);
+      setProject(prev => prev ? { ...prev, backgroundMusicUrl: musicUrl } : null);
+    } catch (err) {
+      console.error("Music generation failed:", err);
+    }
+
     for (let i = 0; i < updatedScenes.length; i++) {
       setLoadingStatus(`Processing scene ${i + 1} of ${updatedScenes.length}...`);
       try {
-        if (!updatedScenes[i].imageUrl) {
-          updatedScenes[i].imageUrl = await generateSceneImage(updatedScenes[i].imagePrompt, style);
-          // Small delay between image and audio generation
+        if (!updatedScenes[i].videoUrl) {
+          setLoadingStatus(`Generating video for scene ${i + 1}...`);
+          updatedScenes[i].videoUrl = await generateSceneVideo(updatedScenes[i].imagePrompt, style, aspectRatio);
+          // Small delay between video and audio generation
           await new Promise(resolve => setTimeout(resolve, 1500));
         }
         if (!updatedScenes[i].audioUrl) {
+          setLoadingStatus(`Generating voiceover for scene ${i + 1}...`);
           updatedScenes[i].audioUrl = await generateSceneAudio(updatedScenes[i].text);
         }
-        setProject({ ...project, scenes: updatedScenes });
+        setProject(prev => prev ? { ...prev, scenes: updatedScenes } : null);
         
         // Delay between scenes to respect rate limits
         if (i < updatedScenes.length - 1) {
@@ -106,21 +118,28 @@ export default function App() {
   };
 
   return (
-    <div className="min-h-screen flex flex-col">
+    <div className="min-h-screen flex flex-col relative">
+      {/* Animated Background */}
+      <div className="animated-bg">
+        <div className="blob" style={{ top: '10%', left: '10%' }} />
+        <div className="blob" style={{ bottom: '10%', right: '10%', animationDelay: '-5s' }} />
+        <div className="blob" style={{ top: '40%', right: '20%', animationDelay: '-10s', width: '300px', height: '300px' }} />
+      </div>
+
       {/* Navbar */}
-      <nav className="h-16 border-b bg-white flex items-center justify-between px-8 sticky top-0 z-50">
+      <nav className="h-16 border-b border-white/10 bg-black/20 backdrop-blur-lg flex items-center justify-between px-8 sticky top-0 z-50">
         <div className="flex items-center gap-2">
-          <div className="w-8 h-8 bg-brand-600 rounded-lg flex items-center justify-center text-white">
+          <div className="w-8 h-8 bg-brand-600 rounded-lg flex items-center justify-center text-white shadow-lg shadow-brand-500/20">
             <Video size={20} />
           </div>
-          <span className="font-bold text-xl tracking-tight">ShortVibe</span>
+          <span className="font-bold text-xl tracking-tight text-white">ShortVibe</span>
         </div>
         
         <div className="flex items-center gap-4">
-          <button className="p-2 text-slate-500 hover:bg-slate-100 rounded-lg transition-colors">
+          <button className="p-2 text-slate-400 hover:text-white hover:bg-white/10 rounded-lg transition-colors">
             <Settings size={20} />
           </button>
-          <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-brand-500 to-purple-500" />
+          <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-brand-500 to-purple-500 border border-white/20" />
         </div>
       </nav>
 
@@ -129,38 +148,38 @@ export default function App() {
           {step === 'input' && (
             <motion.div
               key="input"
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -20 }}
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 1.05 }}
               className="max-w-3xl mx-auto space-y-8"
             >
               <div className="text-center space-y-4">
-                <h1 className="text-5xl font-extrabold tracking-tight text-slate-900">
-                  Turn your words into <span className="gradient-text">viral videos</span>
-                </h1>
-                <p className="text-xl text-slate-500 max-w-xl mx-auto">
-                  Paste your script, blog post, or ideas. Our AI handles the visuals, voiceover, and editing.
+                <motion.h1 
+                  initial={{ opacity: 0, y: 20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  className="text-6xl font-extrabold tracking-tight text-white"
+                >
+                  Turn your words into <span className="gradient-text">cinematic magic</span>
+                </motion.h1>
+                <p className="text-xl text-slate-400 max-w-xl mx-auto">
+                  Paste your script. Our AI handles the video generation, voiceover, and background music.
                 </p>
               </div>
 
               <div className="glass-panel p-8 rounded-3xl space-y-6">
                 <div className="space-y-2">
-                  <label className="text-sm font-bold text-slate-700 uppercase tracking-wider">Your Script</label>
+                  <label className="text-sm font-bold text-slate-300 uppercase tracking-wider">Your Script</label>
                   <textarea
                     value={script}
                     onChange={(e) => setScript(e.target.value)}
-                    placeholder="Once upon a time in a digital world..."
-                    className="w-full h-64 p-6 rounded-2xl bg-slate-50 border-2 border-slate-100 focus:border-brand-500 focus:ring-0 transition-all resize-none text-lg"
+                    placeholder="Describe your story or paste a script..."
+                    className="w-full h-64 p-6 rounded-2xl bg-white/5 border-2 border-white/10 text-white focus:border-brand-500 focus:ring-0 transition-all resize-none text-lg placeholder:text-slate-600"
                   />
-                  <div className="flex justify-between text-xs text-slate-400 font-medium">
-                    <span>{script.length} / 5,000 characters</span>
-                    <span>Supports Markdown</span>
-                  </div>
                 </div>
 
                 <div className="grid grid-cols-2 gap-6">
                   <div className="space-y-2">
-                    <label className="text-sm font-bold text-slate-700 uppercase tracking-wider">Visual Style</label>
+                    <label className="text-sm font-bold text-slate-300 uppercase tracking-wider">Visual Style</label>
                     <div className="grid grid-cols-3 gap-2">
                       {(['cinematic', 'illustrated', 'corporate'] as const).map((s) => (
                         <button
@@ -168,8 +187,8 @@ export default function App() {
                           onClick={() => setStyle(s)}
                           className={`py-3 px-2 rounded-xl text-sm font-semibold capitalize transition-all ${
                             style === s 
-                            ? 'bg-brand-600 text-white shadow-lg shadow-brand-200' 
-                            : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                            ? 'bg-brand-600 text-white shadow-lg shadow-brand-500/20' 
+                            : 'bg-white/5 text-slate-400 hover:bg-white/10'
                           }`}
                         >
                           {s}
@@ -178,7 +197,7 @@ export default function App() {
                     </div>
                   </div>
                   <div className="space-y-2">
-                    <label className="text-sm font-bold text-slate-700 uppercase tracking-wider">Aspect Ratio</label>
+                    <label className="text-sm font-bold text-slate-300 uppercase tracking-wider">Aspect Ratio</label>
                     <div className="grid grid-cols-3 gap-2">
                       {(['9:16', '1:1', '16:9'] as const).map((r) => (
                         <button
@@ -186,8 +205,8 @@ export default function App() {
                           onClick={() => setAspectRatio(r)}
                           className={`py-3 px-2 rounded-xl text-sm font-semibold transition-all ${
                             aspectRatio === r 
-                            ? 'bg-brand-600 text-white shadow-lg shadow-brand-200' 
-                            : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                            ? 'bg-brand-600 text-white shadow-lg shadow-brand-500/20' 
+                            : 'bg-white/5 text-slate-400 hover:bg-white/10'
                           }`}
                         >
                           {r}
@@ -200,20 +219,13 @@ export default function App() {
                 <button
                   onClick={handleStartGeneration}
                   disabled={!script.trim()}
-                  className="w-full py-5 bg-slate-900 text-white rounded-2xl font-bold text-xl flex items-center justify-center gap-3 hover:bg-slate-800 transition-all disabled:opacity-50 disabled:cursor-not-allowed group"
+                  className="w-full py-5 bg-white text-slate-950 rounded-2xl font-bold text-xl flex items-center justify-center gap-3 hover:bg-slate-100 transition-all disabled:opacity-50 disabled:cursor-not-allowed group shadow-xl shadow-white/10"
                 >
-                  <Sparkles size={24} className="text-brand-400 group-hover:rotate-12 transition-transform" />
-                  Generate Video
+                  <Sparkles size={24} className="text-brand-600 group-hover:rotate-12 transition-transform" />
+                  Generate AI Video
                   <ArrowRight size={24} />
                 </button>
               </div>
-
-              {error && (
-                <div className="p-4 bg-red-50 border border-red-100 text-red-600 rounded-xl flex items-center gap-3">
-                  <AlertCircle size={20} />
-                  <p className="text-sm font-medium">{error}</p>
-                </div>
-              )}
             </motion.div>
           )}
 
@@ -229,15 +241,15 @@ export default function App() {
                 <motion.div
                   animate={{ rotate: 360 }}
                   transition={{ duration: 2, repeat: Infinity, ease: "linear" }}
-                  className="w-24 h-24 border-4 border-brand-100 border-t-brand-600 rounded-full"
+                  className="w-32 h-32 border-4 border-white/5 border-t-brand-500 rounded-full"
                 />
-                <div className="absolute inset-0 flex items-center justify-center text-brand-600">
-                  <Sparkles size={32} />
+                <div className="absolute inset-0 flex items-center justify-center text-brand-500">
+                  <Sparkles size={40} className="animate-pulse" />
                 </div>
               </div>
-              <div className="text-center space-y-2">
-                <h2 className="text-2xl font-bold text-slate-900">Magic in progress...</h2>
-                <p className="text-slate-500 font-medium">{loadingStatus}</p>
+              <div className="text-center space-y-3">
+                <h2 className="text-3xl font-bold text-white">Crafting your masterpiece</h2>
+                <p className="text-slate-400 font-medium text-lg">{loadingStatus}</p>
               </div>
             </motion.div>
           )}
@@ -251,19 +263,19 @@ export default function App() {
             >
               <div className="col-span-8 space-y-6">
                 <div className="flex items-center justify-between">
-                  <h2 className="text-2xl font-bold text-slate-900 flex items-center gap-2">
-                    <Layout size={24} className="text-brand-600" />
-                    Scene Editor
+                  <h2 className="text-3xl font-bold text-white flex items-center gap-3">
+                    <Layout size={28} className="text-brand-500" />
+                    Storyboards
                   </h2>
                   <div className="flex items-center gap-3">
-                    <button className="px-4 py-2 text-sm font-bold text-slate-600 hover:bg-slate-100 rounded-lg transition-colors">
+                    <button className="px-6 py-2.5 text-sm font-bold text-slate-300 hover:text-white hover:bg-white/5 rounded-xl transition-colors border border-white/10">
                       Save Draft
                     </button>
                     <button 
                       onClick={generateAllAssets}
-                      className="px-6 py-2 bg-brand-600 text-white rounded-lg font-bold hover:bg-brand-700 transition-all shadow-lg shadow-brand-100"
+                      className="px-8 py-2.5 bg-brand-600 text-white rounded-xl font-bold hover:bg-brand-700 transition-all shadow-lg shadow-brand-500/20"
                     >
-                      Finalize Video
+                      Render Final Video
                     </button>
                   </div>
                 </div>
@@ -275,22 +287,24 @@ export default function App() {
                       initial={{ opacity: 0, x: -20 }}
                       animate={{ opacity: 1, x: 0 }}
                       transition={{ delay: index * 0.1 }}
-                      className="glass-panel p-6 rounded-2xl flex gap-6 group hover:border-brand-200 transition-all"
+                      className="glass-panel p-6 rounded-3xl flex gap-6 group hover:border-brand-500/30 transition-all"
                     >
-                      <div className="w-48 aspect-video bg-slate-100 rounded-xl overflow-hidden relative flex-shrink-0">
-                        {scene.imageUrl ? (
+                      <div className="w-56 aspect-video bg-white/5 rounded-2xl overflow-hidden relative flex-shrink-0 border border-white/10">
+                        {scene.videoUrl ? (
+                          <video src={scene.videoUrl} className="w-full h-full object-cover" autoPlay muted loop />
+                        ) : scene.imageUrl ? (
                           <img src={scene.imageUrl} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
                         ) : (
-                          <div className="w-full h-full flex items-center justify-center text-slate-300">
-                            <ImageIcon size={32} />
+                          <div className="w-full h-full flex items-center justify-center text-slate-600">
+                            <ImageIcon size={40} />
                           </div>
                         )}
-                        <div className="absolute top-2 left-2 bg-black/50 text-white text-[10px] font-bold px-2 py-1 rounded uppercase tracking-widest">
+                        <div className="absolute top-3 left-3 bg-black/60 backdrop-blur-md text-white text-[10px] font-bold px-2.5 py-1 rounded-lg uppercase tracking-widest border border-white/10">
                           Scene {index + 1}
                         </div>
                       </div>
                       
-                      <div className="flex-1 space-y-3">
+                      <div className="flex-1 space-y-4">
                         <textarea
                           value={scene.text}
                           onChange={(e) => {
@@ -298,99 +312,144 @@ export default function App() {
                             newScenes[index].text = e.target.value;
                             setProject({ ...project, scenes: newScenes });
                           }}
-                          className="w-full bg-transparent border-none p-0 focus:ring-0 text-slate-700 font-medium resize-none"
+                          className="w-full bg-transparent border-none p-0 focus:ring-0 text-white font-medium resize-none text-lg leading-relaxed"
                           rows={2}
                         />
-                        <div className="flex items-center gap-4 pt-2 border-t border-slate-100">
-                          <div className="flex items-center gap-1.5 text-xs font-bold text-slate-400 uppercase tracking-wider">
-                            <Mic size={14} />
+                        <div className="flex items-center gap-6 pt-4 border-t border-white/5">
+                          <div className="flex items-center gap-2 text-xs font-bold text-slate-400 uppercase tracking-wider">
+                            <Mic size={16} className="text-brand-500" />
                             Voice: Kore
                           </div>
-                          <div className="flex items-center gap-1.5 text-xs font-bold text-slate-400 uppercase tracking-wider">
-                            <RefreshCw size={14} className="cursor-pointer hover:text-brand-500 transition-colors" />
-                            Regenerate Visual
+                          <div className="flex items-center gap-2 text-xs font-bold text-slate-400 uppercase tracking-wider">
+                            <RefreshCw size={16} className="cursor-pointer hover:text-brand-500 transition-colors" />
+                            Regenerate
                           </div>
-                          {scene.imageUrl && (
+                          {scene.videoUrl && (
                             <a 
-                              href={scene.imageUrl} 
-                              download={`scene-${index + 1}.png`}
-                              className="flex items-center gap-1.5 text-xs font-bold text-brand-600 uppercase tracking-wider hover:text-brand-700 transition-colors"
+                              href={scene.videoUrl} 
+                              download={`scene-${index + 1}.mp4`}
+                              className="flex items-center gap-2 text-xs font-bold text-brand-400 uppercase tracking-wider hover:text-brand-300 transition-colors"
                             >
-                              <Download size={14} />
-                              Download Image
+                              <Download size={16} />
+                              Download Clip
                             </a>
                           )}
                         </div>
                       </div>
 
                       <div className="flex flex-col justify-between">
-                        <button className="p-2 text-slate-300 hover:text-red-500 transition-colors">
-                          <Trash2 size={20} />
+                        <button className="p-2 text-slate-600 hover:text-red-500 transition-colors">
+                          <Trash2 size={24} />
                         </button>
-                        <div className="text-xs font-bold text-slate-400">{scene.duration}s</div>
+                        <div className="text-sm font-bold text-slate-500">{scene.duration}s</div>
                       </div>
                     </motion.div>
                   ))}
-                  <button className="w-full py-4 border-2 border-dashed border-slate-200 rounded-2xl text-slate-400 font-bold flex items-center justify-center gap-2 hover:border-brand-300 hover:text-brand-500 transition-all">
-                    <Plus size={20} />
-                    Add Scene
+                  <button className="w-full py-6 border-2 border-dashed border-white/10 rounded-3xl text-slate-500 font-bold flex items-center justify-center gap-3 hover:border-brand-500/50 hover:text-brand-400 transition-all bg-white/5">
+                    <Plus size={24} />
+                    Add New Scene
                   </button>
                 </div>
               </div>
 
               <div className="col-span-4 space-y-6">
-                <div className="glass-panel p-6 rounded-2xl sticky top-24 space-y-6">
-                  <h3 className="font-bold text-lg text-slate-900 flex items-center gap-2">
-                    <Settings size={20} className="text-brand-600" />
-                    Project Settings
+                <div className="glass-panel p-8 rounded-3xl sticky top-24 space-y-8">
+                  <h3 className="font-bold text-xl text-white flex items-center gap-3">
+                    <Settings size={24} className="text-brand-500" />
+                    Project Config
                   </h3>
                   
-                  <div className="space-y-4">
-                    <div className="space-y-2">
-                      <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">Brand Voice</label>
-                      <select className="w-full bg-slate-50 border-slate-100 rounded-xl text-sm font-semibold p-3">
-                        <option>Kore (Professional)</option>
-                        <option>Fenrir (Energetic)</option>
-                        <option>Zephyr (Calm)</option>
+                  <div className="space-y-6">
+                    <div className="space-y-3">
+                      <label className="text-xs font-bold text-slate-400 uppercase tracking-wider">Narrator Voice</label>
+                      <select className="w-full bg-white/5 border-white/10 rounded-xl text-sm font-semibold p-4 text-white focus:ring-brand-500">
+                        <option className="bg-slate-900">Kore (Professional)</option>
+                        <option className="bg-slate-900">Fenrir (Energetic)</option>
+                        <option className="bg-slate-900">Zephyr (Calm)</option>
                       </select>
                     </div>
 
-                    <div className="space-y-2">
-                      <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">Background Music</label>
-                      <div className="p-3 bg-slate-50 rounded-xl flex items-center justify-between">
-                        <div className="flex items-center gap-2">
-                          <Music size={16} className="text-brand-500" />
-                          <span className="text-sm font-semibold">Corporate Uplift</span>
+                    <div className="space-y-3">
+                      <label className="text-xs font-bold text-slate-400 uppercase tracking-wider">Background Music</label>
+                      <div className="p-4 bg-white/5 rounded-xl flex items-center justify-between border border-white/10">
+                        <div className="flex items-center gap-3">
+                          <Music size={18} className="text-brand-500" />
+                          <span className="text-sm font-semibold text-white">AI Generated Track</span>
                         </div>
-                        <button className="text-xs font-bold text-brand-600">Change</button>
+                        <button className="text-xs font-bold text-brand-400 hover:text-brand-300">Regenerate</button>
                       </div>
                     </div>
 
-                    <div className="space-y-2">
-                      <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">Brand Color</label>
-                      <div className="flex gap-2">
+                    <div className="space-y-3">
+                      <label className="text-xs font-bold text-slate-400 uppercase tracking-wider">Brand Palette</label>
+                      <div className="flex gap-3">
                         {['#0c91eb', '#8b5cf6', '#ec4899', '#10b981'].map(color => (
                           <button 
                             key={color}
-                            className="w-8 h-8 rounded-full border-2 border-white shadow-sm"
+                            className={`w-10 h-10 rounded-full border-2 shadow-lg transition-all ${project?.brandKit?.primaryColor === color ? 'border-white scale-110' : 'border-white/20'}`}
                             style={{ backgroundColor: color }}
+                            onClick={() => setProject(prev => prev ? { ...prev, brandKit: { ...prev.brandKit, primaryColor: color, secondaryColor: color, logo: prev.brandKit?.logo || '' } } : null)}
                           />
                         ))}
-                        <button className="w-8 h-8 rounded-full border-2 border-dashed border-slate-300 flex items-center justify-center text-slate-400">
-                          <Plus size={14} />
-                        </button>
+                      </div>
+                    </div>
+
+                    <div className="space-y-3">
+                      <label className="text-xs font-bold text-slate-400 uppercase tracking-wider">Brand Logo</label>
+                      <div className="flex items-center gap-4">
+                        {project?.brandKit?.logo ? (
+                          <div className="relative w-16 h-16 bg-white/5 rounded-xl border border-white/10 p-2 group">
+                            <img src={project.brandKit.logo} alt="Logo" className="w-full h-full object-contain" />
+                            <button 
+                              onClick={() => setProject(prev => prev ? { ...prev, brandKit: { ...prev.brandKit, logo: '', primaryColor: prev.brandKit?.primaryColor || '#0c91eb', secondaryColor: prev.brandKit?.secondaryColor || '#0c91eb' } } : null)}
+                              className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full p-1 opacity-0 group-hover:opacity-100 transition-opacity"
+                            >
+                              <Trash2 size={12} />
+                            </button>
+                          </div>
+                        ) : (
+                          <label className="w-16 h-16 bg-white/5 rounded-xl border border-dashed border-white/20 flex items-center justify-center text-slate-500 hover:text-white hover:border-white/40 transition-all cursor-pointer">
+                            <Plus size={24} />
+                            <input 
+                              type="file" 
+                              className="hidden" 
+                              accept="image/*"
+                              onChange={(e) => {
+                                const file = e.target.files?.[0];
+                                if (file) {
+                                  const reader = new FileReader();
+                                  reader.onloadend = () => {
+                                    setProject(prev => prev ? { 
+                                      ...prev, 
+                                      brandKit: { 
+                                        logo: reader.result as string,
+                                        primaryColor: prev.brandKit?.primaryColor || '#0c91eb',
+                                        secondaryColor: prev.brandKit?.secondaryColor || '#0c91eb'
+                                      } 
+                                    } : null);
+                                  };
+                                  reader.readAsDataURL(file);
+                                }
+                              }}
+                            />
+                          </label>
+                        )}
+                        <div className="flex-1">
+                          <p className="text-sm font-semibold text-white">Upload Brand Logo</p>
+                          <p className="text-xs text-slate-500">PNG or SVG recommended</p>
+                        </div>
                       </div>
                     </div>
                   </div>
 
-                  <div className="pt-4 border-t border-slate-100">
-                    <div className="flex justify-between text-sm font-bold text-slate-700 mb-2">
-                      <span>Estimated Length</span>
-                      <span>~45 seconds</span>
+                  <div className="pt-6 border-t border-white/10 space-y-3">
+                    <div className="flex justify-between text-sm font-bold text-slate-300">
+                      <span>Total Duration</span>
+                      <span className="text-white">~45 seconds</span>
                     </div>
-                    <div className="flex justify-between text-sm font-bold text-slate-700">
-                      <span>Resolution</span>
-                      <span>1080p (Full HD)</span>
+                    <div className="flex justify-between text-sm font-bold text-slate-300">
+                      <span>Output Quality</span>
+                      <span className="text-white">720p (HD)</span>
                     </div>
                   </div>
                 </div>
@@ -408,25 +467,25 @@ export default function App() {
               <div className="flex items-center justify-between">
                 <button 
                   onClick={() => setStep('editor')}
-                  className="flex items-center gap-2 text-slate-500 font-bold hover:text-slate-900 transition-colors"
+                  className="flex items-center gap-2 text-slate-400 font-bold hover:text-white transition-colors"
                 >
                   <ChevronLeft size={20} />
-                  Back to Editor
+                  Back to Storyboards
                 </button>
-                <div className="flex items-center gap-2 text-green-600 font-bold">
+                <div className="flex items-center gap-2 text-green-400 font-bold">
                   <CheckCircle2 size={20} />
-                  Generation Complete
+                  Video Ready
                 </div>
               </div>
 
               <VideoPreview project={project} />
 
               <div className="grid grid-cols-3 gap-6">
-                <div className="glass-panel p-6 rounded-2xl text-center space-y-2">
-                  <div className="w-10 h-10 bg-blue-50 text-blue-600 rounded-full flex items-center justify-center mx-auto mb-2">
-                    <Layout size={20} />
+                <div className="glass-panel p-8 rounded-3xl text-center space-y-3 hover:border-brand-500/30 transition-all">
+                  <div className="w-12 h-12 bg-blue-500/10 text-blue-400 rounded-2xl flex items-center justify-center mx-auto mb-2">
+                    <Layout size={24} />
                   </div>
-                  <h4 className="font-bold text-slate-900">TikTok</h4>
+                  <h4 className="font-bold text-white">TikTok</h4>
                   <p className="text-xs text-slate-500">Optimized for 9:16</p>
                   <button 
                     onClick={() => {
@@ -438,16 +497,16 @@ export default function App() {
                       a.click();
                       URL.revokeObjectURL(url);
                     }}
-                    className="text-sm font-bold text-brand-600 pt-2"
+                    className="text-sm font-bold text-brand-400 pt-3 hover:text-brand-300 block w-full"
                   >
                     Export Project
                   </button>
                 </div>
-                <div className="glass-panel p-6 rounded-2xl text-center space-y-2">
-                  <div className="w-10 h-10 bg-purple-50 text-purple-600 rounded-full flex items-center justify-center mx-auto mb-2">
-                    <Layout size={20} />
+                <div className="glass-panel p-8 rounded-3xl text-center space-y-3 hover:border-brand-500/30 transition-all">
+                  <div className="w-12 h-12 bg-purple-500/10 text-purple-400 rounded-2xl flex items-center justify-center mx-auto mb-2">
+                    <Layout size={24} />
                   </div>
-                  <h4 className="font-bold text-slate-900">Instagram</h4>
+                  <h4 className="font-bold text-white">Instagram</h4>
                   <p className="text-xs text-slate-500">Reels & Stories</p>
                   <button 
                     onClick={() => {
@@ -459,16 +518,16 @@ export default function App() {
                       a.click();
                       URL.revokeObjectURL(url);
                     }}
-                    className="text-sm font-bold text-brand-600 pt-2"
+                    className="text-sm font-bold text-brand-400 pt-3 hover:text-brand-300 block w-full"
                   >
                     Export Project
                   </button>
                 </div>
-                <div className="glass-panel p-6 rounded-2xl text-center space-y-2">
-                  <div className="w-10 h-10 bg-red-50 text-red-600 rounded-full flex items-center justify-center mx-auto mb-2">
-                    <Layout size={20} />
+                <div className="glass-panel p-8 rounded-3xl text-center space-y-3 hover:border-brand-500/30 transition-all">
+                  <div className="w-12 h-12 bg-red-500/10 text-red-400 rounded-2xl flex items-center justify-center mx-auto mb-2">
+                    <Layout size={24} />
                   </div>
-                  <h4 className="font-bold text-slate-900">YouTube</h4>
+                  <h4 className="font-bold text-white">YouTube</h4>
                   <p className="text-xs text-slate-500">Shorts format</p>
                   <button 
                     onClick={() => {
@@ -480,7 +539,7 @@ export default function App() {
                       a.click();
                       URL.revokeObjectURL(url);
                     }}
-                    className="text-sm font-bold text-brand-600 pt-2"
+                    className="text-sm font-bold text-brand-400 pt-3 hover:text-brand-300 block w-full"
                   >
                     Export Project
                   </button>
@@ -492,13 +551,13 @@ export default function App() {
       </main>
 
       {/* Footer */}
-      <footer className="py-8 border-t bg-white">
-        <div className="max-w-7xl mx-auto px-8 flex justify-between items-center text-slate-400 text-sm font-medium">
+      <footer className="py-12 border-t border-white/10 bg-black/20 backdrop-blur-lg">
+        <div className="max-w-7xl mx-auto px-8 flex justify-between items-center text-slate-500 text-sm font-medium">
           <p>© 2026 ShortVibe AI. All rights reserved.</p>
-          <div className="flex gap-6">
-            <a href="#" className="hover:text-slate-600">Privacy Policy</a>
-            <a href="#" className="hover:text-slate-600">Terms of Service</a>
-            <a href="#" className="hover:text-slate-600">API Documentation</a>
+          <div className="flex gap-8">
+            <a href="#" className="hover:text-white transition-colors">Privacy Policy</a>
+            <a href="#" className="hover:text-white transition-colors">Terms of Service</a>
+            <a href="#" className="hover:text-white transition-colors">API Documentation</a>
           </div>
         </div>
       </footer>

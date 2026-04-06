@@ -1,6 +1,6 @@
 import { GoogleGenAI, Type, Modality } from "@google/genai";
 
-const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || "" });
+const ai = new GoogleGenAI({ apiKey: import.meta.env.VITE_GEMINI_API_KEY || "" });
 
 async function withRetry<T>(fn: () => Promise<T>, maxRetries: number = 8): Promise<T> {
   let lastError: any;
@@ -40,6 +40,7 @@ export interface Scene {
   text: string;
   imagePrompt: string;
   imageUrl?: string;
+  videoUrl?: string;
   audioUrl?: string;
   duration: number;
 }
@@ -51,11 +52,75 @@ export interface VideoProject {
   style: 'cinematic' | 'illustrated' | 'corporate';
   aspectRatio: '9:16' | '1:1' | '16:9';
   scenes: Scene[];
+  backgroundMusicUrl?: string;
   brandKit?: {
     logo?: string;
     primaryColor: string;
     secondaryColor: string;
   };
+}
+
+export async function generateSceneVideo(prompt: string, style: string, aspectRatio: '9:16' | '16:9' | '1:1'): Promise<string> {
+  const fullPrompt = `A high-quality ${style} style video: ${prompt}. Professional lighting, detailed textures, smooth movement.`;
+  
+  let operation = await ai.models.generateVideos({
+    model: 'veo-3.1-lite-generate-preview',
+    prompt: fullPrompt,
+    config: {
+      numberOfVideos: 1,
+      resolution: '720p',
+      aspectRatio: aspectRatio === '1:1' ? '16:9' : aspectRatio // Veo lite only supports 16:9 or 9:16
+    }
+  });
+
+  while (!operation.done) {
+    await new Promise(resolve => setTimeout(resolve, 5000));
+    operation = await ai.operations.getVideosOperation({ operation: operation });
+  }
+
+  const downloadLink = operation.response?.generatedVideos?.[0]?.video?.uri;
+  if (!downloadLink) throw new Error("Failed to generate video");
+
+  const response = await fetch(downloadLink, {
+    method: 'GET',
+    headers: {
+      'x-goog-api-key': process.env.GEMINI_API_KEY || "",
+    },
+  });
+
+  const blob = await response.blob();
+  return URL.createObjectURL(blob);
+}
+
+export async function generateBackgroundMusic(prompt: string): Promise<string> {
+  const response = await ai.models.generateContentStream({
+    model: "lyria-3-clip-preview",
+    contents: `Generate a 30-second background music track: ${prompt}.`,
+  });
+
+  let audioBase64 = "";
+  let mimeType = "audio/wav";
+
+  for await (const chunk of response) {
+    const parts = chunk.candidates?.[0]?.content?.parts;
+    if (!parts) continue;
+    for (const part of parts) {
+      if (part.inlineData?.data) {
+        if (!audioBase64 && part.inlineData.mimeType) {
+          mimeType = part.inlineData.mimeType;
+        }
+        audioBase64 += part.inlineData.data;
+      }
+    }
+  }
+
+  const binary = atob(audioBase64);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) {
+    bytes[i] = binary.charCodeAt(i);
+  }
+  const blob = new Blob([bytes], { type: mimeType });
+  return URL.createObjectURL(blob);
 }
 
 export async function segmentTextIntoScenes(text: string, style: string): Promise<Scene[]> {
