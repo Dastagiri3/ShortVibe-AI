@@ -1,6 +1,11 @@
 # 🚀 ShortVibe-AI
 ---
 
+![GitHub Repo stars](https://img.shields.io/github/stars/Dastagiri3/ShortVibe-AI?style=for-the-badge)
+![GitHub forks](https://img.shields.io/github/forks/Dastagiri3/ShortVibe-AI?style=for-the-badge)
+![GitHub issues](https://img.shields.io/github/issues/Dastagiri3/ShortVibe-AI?style=for-the-badge)
+![GitHub license](https://img.shields.io/github/license/Dastagiri3/ShortVibe-AI?style=for-the-badge)
+
 🎬 AI-powered short video generation tool that transforms ideas, scripts, or long content into engaging short-form videos (Reels / Shorts / TikTok).
 
 ---
